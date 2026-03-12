@@ -1,6 +1,6 @@
 {
   "name": "doubt-gate",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Claude Code Stop hook that detects uncertainty in assistant messages. When doubt keywords (likely, maybe, might, probably, etc.) are found outside of code blocks and blockquotes, the hook blocks the stop and instructs the agent to add logging, assertions, or other verification before concluding.",
   "author": {
     "name": "John Lindquist"
