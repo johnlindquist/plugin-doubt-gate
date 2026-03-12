@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": true,
+  "stopHookMetadata": { "stop_hook_active": true },
+  "last_assistant_message": "This might be a race condition in the connection pool. I think the timeout is too low.",
+  "session_id": "test-active-guard",
+  "transcript_path": "",
+  "cwd": "/tmp"
+}

@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "The root cause was a null pointer dereference at line 42. I added a null check and verified the fix passes all 15 test cases. The deployment completed successfully.",
+  "session_id": "test-clean-1",
+  "transcript_path": "",
+  "cwd": "/tmp"
+}

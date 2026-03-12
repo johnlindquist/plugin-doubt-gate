@@ -1,0 +1,17 @@
+{
+  "name": "doubt-gate",
+  "version": "1.0.0",
+  "description": "Claude Code Stop hook that detects uncertainty in assistant messages",
+  "type": "module",
+  "main": "hooks/doubt-gate.mjs",
+  "scripts": {
+    "test": "bun test"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "hook",
+    "stop-hook",
+    "doubt-detection"
+  ]
+}

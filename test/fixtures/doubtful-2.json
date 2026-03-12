@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "The error is probably caused by a stale cache. It seems like the invalidation logic is not certain to run on every deploy.",
+  "session_id": "test-doubtful-2",
+  "transcript_path": "",
+  "cwd": "/tmp"
+}
