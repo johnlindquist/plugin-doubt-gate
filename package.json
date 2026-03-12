@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Claude Code Stop hook that detects uncertainty in assistant messages",
   "type": "module",
-  "main": "hooks/doubt-gate.mjs",
+  "main": "hooks/doubt-gate.ts",
   "scripts": {
     "test": "bun test"
   },
@@ -13,5 +13,8 @@
     "hook",
     "stop-hook",
     "doubt-detection"
-  ]
+  ],
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.74"
+  }
 }

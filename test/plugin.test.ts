@@ -3,7 +3,7 @@ import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const FIXTURES_DIR = join(import.meta.dir, "fixtures");
-const HOOK_PATH = join(import.meta.dir, "..", "hooks", "doubt-gate.mjs");
+const HOOK_PATH = join(import.meta.dir, "..", "hooks", "doubt-gate.ts");
 const LOG_PATH = "/tmp/doubt-gate-plugin-test.log";
 
 interface FixtureResult {
@@ -14,7 +14,7 @@ interface FixtureResult {
 
 async function runHookWithFixture(fixtureName: string, extraArgs: string[] = [], env: Record<string, string> = {}): Promise<FixtureResult> {
   const fixtureContent = readFileSync(join(FIXTURES_DIR, fixtureName), "utf-8");
-  const proc = Bun.spawn(["node", HOOK_PATH, ...extraArgs], {
+  const proc = Bun.spawn(["bun", "run", HOOK_PATH, ...extraArgs], {
     stdin: new Blob([fixtureContent]),
     stdout: "pipe",
     stderr: "pipe",
@@ -29,7 +29,7 @@ async function runHookWithFixture(fixtureName: string, extraArgs: string[] = [],
 }
 
 async function runHookWithStdin(stdin: string, extraArgs: string[] = [], env: Record<string, string> = {}): Promise<FixtureResult> {
-  const proc = Bun.spawn(["node", HOOK_PATH, ...extraArgs], {
+  const proc = Bun.spawn(["bun", "run", HOOK_PATH, ...extraArgs], {
     stdin: new Blob([stdin]),
     stdout: "pipe",
     stderr: "pipe",
@@ -44,7 +44,7 @@ async function runHookWithStdin(stdin: string, extraArgs: string[] = [], env: Re
 }
 
 async function runHookNoStdin(extraArgs: string[]): Promise<FixtureResult> {
-  const proc = Bun.spawn(["node", HOOK_PATH, ...extraArgs], {
+  const proc = Bun.spawn(["bun", "run", HOOK_PATH, ...extraArgs], {
     stdout: "pipe",
     stderr: "pipe",
     env: { ...process.env, DOUBT_GATE_LOG_LEVEL: "off" },
@@ -57,7 +57,7 @@ async function runHookNoStdin(extraArgs: string[]): Promise<FixtureResult> {
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 
-describe("plugin verification: compiled .mjs hook", () => {
+describe("plugin verification: doubt-gate hook", () => {
   test("doubtful-1.json produces decision:block", async () => {
     const result = await runHookWithFixture("doubtful-1.json");
     expect(result.exitCode).toBe(0);

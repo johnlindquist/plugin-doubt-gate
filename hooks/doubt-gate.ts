@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * @module doubt-gate
  *
@@ -18,19 +18,6 @@
  * A `stop_hook_active` guard in the input prevents infinite blocking — if the
  * hook already fired once for this turn the stop is always allowed.
  *
- * ## Modular API
- *
- * The following named exports allow each stage of the pipeline to be called
- * independently for testing, introspection, and composition:
- *
- * - `parseInput(raw)` — parse a JSON string into a StopHookInput object
- * - `analyze(input)` — scan for doubt keywords, return analysis details
- * - `emitHookDecision(result)` — write a hook decision to stdout
- * - `emitLog(entry, configLevel?)` — append a structured log entry to the log file
- *
- * The `evaluate(input)` function composes these internally and remains the
- * primary entry point for hook execution.
- *
  * ## Configuration
  *
  * | Env var                  | Values                        | Default              |
@@ -42,6 +29,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import type { StopHookInput, SyncHookJSONOutput } from "@anthropic-ai/claude-agent-sdk";
 
 export const SCHEMA_VERSION = "1.0.0";
 export const PLUGIN_VERSION = "1.0.0";
@@ -49,22 +37,72 @@ export const PLUGIN_VERSION = "1.0.0";
 export const DOUBT_PATTERN =
   /\b(likely|maybe|might|probably|possibly|not sure|not certain|uncertain|unclear|could be|appears to|seems like|I think|I believe|I suspect|it's possible|hard to say)\b/gi;
 
+type LogLevel = "off" | "info" | "debug";
+
+interface TraceEntry {
+  schema_version: string;
+  plugin_version: string;
+  timestamp: string;
+  event: string;
+  level: "info" | "debug";
+  session?: string;
+  input_hash?: string;
+  mode?: string;
+  duration_ms?: number;
+  keyword?: string | null;
+  confidence?: number;
+  decision?: string;
+  stripped?: string;
+  matches?: string[];
+}
+
+interface AnalysisResult {
+  confidence: number;
+  unique: string[];
+  keywordList: string;
+  stripped: string;
+  matches: string[];
+}
+
+interface BlockResult extends SyncHookJSONOutput {
+  decision: "block";
+  reason: string;
+  schema_version: string;
+  plugin_version: string;
+  mode: string;
+  duration_ms: number;
+  input_hash: string;
+}
+
+interface CheckOutput {
+  decision: "block" | "allow" | "error";
+  reasons?: string[];
+  confidence?: number;
+  error?: string;
+  message?: string;
+  schema_version: string;
+  plugin_version: string;
+  mode: "check";
+  duration_ms: number;
+  input_hash: string;
+}
+
 const LOG_PATH = process.env.DOUBT_GATE_LOG_PATH ?? "/tmp/doubt-gate.log";
 
 /** Compute first 12 hex chars of sha256 of raw input. */
-export function computeInputHash(raw) {
+export function computeInputHash(raw: string): string {
   return createHash("sha256").update(raw).digest("hex").slice(0, 12);
 }
 
 /** Read the configured log level from DOUBT_GATE_LOG_LEVEL env var. Defaults to 'off'. */
-export function getLogLevel() {
+export function getLogLevel(): LogLevel {
   const raw = (process.env.DOUBT_GATE_LOG_LEVEL ?? "").trim().toLowerCase();
   if (raw === "info" || raw === "debug") return raw;
   return "off";
 }
 
 /** Strip fenced code blocks, inline backtick spans, and blockquoted lines so keywords inside don't false-positive. */
-export function stripCodeBlocks(text) {
+export function stripCodeBlocks(text: string): string {
   let result = text.replace(/```[\s\S]*?```/g, "");
   result = result.replace(/`[^`]*`/g, "");
   result = result.replace(/^>.*$/gm, "");
@@ -72,18 +110,20 @@ export function stripCodeBlocks(text) {
 }
 
 /** Returns true if the given entry level should be emitted at the current log level. */
-function shouldLog(entryLevel, configLevel) {
+function shouldLog(entryLevel: "info" | "debug", configLevel: LogLevel): boolean {
   if (configLevel === "off") return false;
   if (configLevel === "debug") return true;
   return entryLevel === "info";
 }
 
 /** Build a base trace event with common fields. */
-function makeTrace(overrides) {
+function makeTrace(overrides: Partial<TraceEntry>): TraceEntry {
   return {
     schema_version: SCHEMA_VERSION,
     plugin_version: PLUGIN_VERSION,
     timestamp: new Date().toISOString(),
+    event: "",
+    level: "info",
     ...overrides,
   };
 }
@@ -93,7 +133,7 @@ function makeTrace(overrides) {
  * Respects DOUBT_GATE_LOG_LEVEL — entries are silently dropped when the
  * configured level is too low.
  */
-export function emitLog(entry, configLevel) {
+export function emitLog(entry: TraceEntry, configLevel?: LogLevel): void {
   const level = configLevel ?? getLogLevel();
   if (!shouldLog(entry.level, level)) return;
   try {
@@ -105,7 +145,7 @@ export function emitLog(entry, configLevel) {
  * Parse a raw JSON string into a StopHookInput object.
  * Returns the parsed object on success, or null if the input is not valid JSON.
  */
-export function parseInput(raw) {
+export function parseInput(raw: string): StopHookInput | null {
   try {
     return JSON.parse(raw);
   } catch {
@@ -118,7 +158,7 @@ export function parseInput(raw) {
  * Returns a structured analysis result with match details, or null if no
  * doubt was detected (or the stop_hook_active guard is set).
  */
-export function analyze(input) {
+export function analyze(input: StopHookInput): AnalysisResult | null {
   if (input.stop_hook_active) {
     return null;
   }
@@ -148,7 +188,7 @@ export function analyze(input) {
  * Write a hook decision object to stdout as a JSON line.
  * If result is null/undefined, nothing is written (allowing the stop).
  */
-export function emitHookDecision(result) {
+export function emitHookDecision(result: BlockResult | null): void {
   if (result) {
     console.log(JSON.stringify(result));
   }
@@ -158,10 +198,10 @@ export function emitHookDecision(result) {
  * Full evaluation pipeline: analyze input and emit JSONL decision traces.
  * This is the primary entry point used in hook mode.
  */
-export function evaluate(input, rawInput) {
+export function evaluate(input: StopHookInput, rawInput: string): BlockResult | null {
   const startMs = performance.now();
   const level = getLogLevel();
-  const inputHash = rawInput ? computeInputHash(rawInput) : computeInputHash(JSON.stringify(input));
+  const inputHash = computeInputHash(rawInput);
   const mode = "hook";
 
   // Trace: invoke
@@ -221,32 +261,27 @@ export function evaluate(input, rawInput) {
   return null;
 }
 
-/** Read all of stdin as a string using Node.js streams (no Bun dependency). */
-function readStdin() {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    process.stdin.on("data", (chunk) => chunks.push(chunk));
-    process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    process.stdin.on("error", reject);
-  });
+/** Read all of stdin as a string. */
+async function readStdin(): Promise<string> {
+  return await Bun.stdin.text();
 }
 
 /** Load plugin.json from the parent directory of this script. */
-function loadPluginManifest() {
+function loadPluginManifest(): { version: string } {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const manifestPath = join(__dirname, "..", ".claude-plugin", "plugin.json");
   return JSON.parse(readFileSync(manifestPath, "utf-8"));
 }
 
 /** Print usage help to stdout. */
-function printHelp() {
+function printHelp(): void {
   console.log(`doubt-gate — Claude Code Stop hook that detects uncertainty
 
 Usage:
-  echo '<json>' | node doubt-gate.mjs           Hook mode (default)
-  echo '<json>' | node doubt-gate.mjs --check    Dry-run: emit structured JSON verdict
-  node doubt-gate.mjs --help                     Show this help
-  node doubt-gate.mjs --version                  Print version from plugin.json
+  echo '<json>' | bun run doubt-gate.ts           Hook mode (default)
+  echo '<json>' | bun run doubt-gate.ts --check    Dry-run: emit structured JSON verdict
+  bun run doubt-gate.ts --help                     Show this help
+  bun run doubt-gate.ts --version                  Print version from plugin.json
 
 Exit codes (--check mode):
   0  decision: allow
@@ -263,7 +298,7 @@ Environment:
  * Never writes to DOUBT_GATE_LOG_PATH.
  * Exit codes: 0=allow, 1=block, 2=input-error.
  */
-async function runCheck() {
+async function runCheck(): Promise<void> {
   const startMs = performance.now();
   const raw = await readStdin();
   const inputHash = computeInputHash(raw);
@@ -271,7 +306,7 @@ async function runCheck() {
 
   if (!input) {
     const durationMs = Math.round(performance.now() - startMs);
-    console.log(JSON.stringify({
+    const output: CheckOutput = {
       decision: "error",
       error: "invalid_json",
       message: "Failed to parse stdin as JSON",
@@ -280,7 +315,8 @@ async function runCheck() {
       mode: "check",
       duration_ms: durationMs,
       input_hash: inputHash,
-    }));
+    };
+    console.log(JSON.stringify(output));
     process.exit(2);
   }
 
@@ -288,7 +324,7 @@ async function runCheck() {
   const durationMs = Math.round(performance.now() - startMs);
 
   if (analysis) {
-    console.log(JSON.stringify({
+    const output: CheckOutput = {
       decision: "block",
       reasons: analysis.unique,
       confidence: analysis.confidence,
@@ -297,11 +333,12 @@ async function runCheck() {
       mode: "check",
       duration_ms: durationMs,
       input_hash: inputHash,
-    }));
+    };
+    console.log(JSON.stringify(output));
     process.exit(1);
   }
 
-  console.log(JSON.stringify({
+  const output: CheckOutput = {
     decision: "allow",
     reasons: [],
     confidence: 0,
@@ -310,13 +347,14 @@ async function runCheck() {
     mode: "check",
     duration_ms: durationMs,
     input_hash: inputHash,
-  }));
+  };
+  console.log(JSON.stringify(output));
   process.exit(0);
 }
 
 // Execution guard: run stdin processing when executed directly
 const scriptPath = process.argv[1] ?? "";
-const isDirectExecution = scriptPath.endsWith("doubt-gate.mjs");
+const isDirectExecution = scriptPath.endsWith("doubt-gate.ts");
 if (isDirectExecution) {
   const args = process.argv.slice(2);
   const flag = args[0];

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/doubt-gate.mjs\""
+            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/doubt-gate.ts\""
           }
         ]
       }

@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$ROOT/hooks/doubt-gate.mjs"
+HOOK="$ROOT/hooks/doubt-gate.ts"
 FIXTURES="$ROOT/test/fixtures"
 
 pass=0
@@ -22,7 +22,7 @@ assert_json_block() {
   local name="$1" fixture="$2"
   total=$((total + 1))
 
-  output=$(node "$HOOK" < "$fixture" 2>/dev/null || true)
+  output=$(bun run "$HOOK" < "$fixture" 2>/dev/null || true)
 
   if [ -z "$output" ]; then
     fail=$((fail + 1))
@@ -50,7 +50,7 @@ assert_no_block() {
   local name="$1" fixture="$2"
   total=$((total + 1))
 
-  output=$(node "$HOOK" < "$fixture" 2>/dev/null || true)
+  output=$(bun run "$HOOK" < "$fixture" 2>/dev/null || true)
 
   if [ -z "$output" ]; then
     pass=$((pass + 1))
